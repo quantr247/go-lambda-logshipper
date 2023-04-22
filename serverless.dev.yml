@@ -1,0 +1,76 @@
+service: logshipper
+
+frameworkVersion: "2"
+useDotenv: true
+
+plugins:
+  - serverless-hooks-plugin
+
+custom:
+  deploymentBuckets:
+    dev: sls-bucket
+
+  hooks:
+    before:package:initialize:
+      - env GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o main main.go
+    after:deploy:finalize:
+      - rm -rf .serverless main
+
+provider:
+  lambdaHashingVersion: "20201221"
+  name: aws
+  runtime: go1.x
+  profile: profile
+  timeout: 120
+  memorySize: 128
+  deploymentBucket:
+    name: ${self:custom.deploymentBuckets}
+  stage: ${opt:stage, 'dev'}
+  region: ${opt:region, 'ap-southeast-1'}
+  vpc:
+    subnetIds:
+      - subnet-xxx
+      - subnet-xxx
+    securityGroupIds:
+      - sg-xxx
+  environment:
+    STAGE: ${opt:stage, 'dev'}
+
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - "logs:*"
+            - "ssm:GetParametersByPath"
+            - "kms:Encrypt"
+            - "kms:Decrypt"
+            - "kms:ReEncrypt*"
+            - "kms:GenerateDataKey*"
+            - "kms:DescribeKey"
+          Resource: "*"
+
+package:
+  individually: true
+  patterns:
+    - "!./**"
+    - .env
+
+functions:
+  LokiShipper:
+    name: ${self:service}
+    handler: main
+    timeout: 900
+    package:
+      patterns:
+        - main
+
+resources:
+  Resources:
+    PermissionLog:
+      Type: AWS::Lambda::Permission
+      Properties:
+        Action: "lambda:InvokeFunction"
+        FunctionName: ${self:service}
+        Principal: "logs.amazonaws.com"
+        SourceAccount: "123456789012"
